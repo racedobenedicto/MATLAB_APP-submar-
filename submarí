@@ -1,0 +1,378 @@
+classdef ROUV_APP < matlab.apps.AppBase
+    
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                     matlab.ui.Figure
+        StartButton                  matlab.ui.control.Button
+        UIAxes                       matlab.ui.control.UIAxes
+        UIAxes2                      matlab.ui.control.UIAxes
+        NumberofphotosTextAreaLabel  matlab.ui.control.Label
+        NumberofphotosTextArea       matlab.ui.control.TextArea
+        PhotoFilesTextAreaLabel      matlab.ui.control.Label
+        PhotoFilesTextArea           matlab.ui.control.TextArea
+        Switch                       matlab.ui.control.Switch
+        StopButton                   matlab.ui.control.Button
+        PressureGaugeLabel           matlab.ui.control.Label
+        PressureGauge                matlab.ui.control.Gauge
+        AltitudeTextAreaLabel        matlab.ui.control.Label
+        AltitudeTextArea             matlab.ui.control.TextArea
+        TemperatureTextAreaLabel     matlab.ui.control.Label
+        TemperatureTextArea          matlab.ui.control.TextArea
+        UIAxes3                      matlab.ui.control.UIAxes
+        Button                       matlab.ui.control.Button
+    end
+
+    methods (Access = public) 
+        function inici(app)
+           global addr;
+           global actiu;
+           global num_photos;
+           num_photos=20;       %número base
+           actiu=0;
+           addr='c:/projecte/'; %dirección de almacenamiento
+        end
+    end
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: StartButton
+        function StartButtonPushed(app, event)
+            global s;
+            global fidT;
+            global fidP;
+            global fidF;
+            global addr;
+            global actiu;
+            global nomF;
+            global num_photos;
+            app.StartButton.Visible=false;  %muestra el botón de Start
+            app.StopButton.Visible=true;
+            inici(app);
+            nFoto=0;
+            nTemperatura=0;
+            nPresion=0;
+            
+            if(actiu == 0 )
+                actiu=1;
+                %Abre puerto de lectura S
+                delete(instrfind ({'Port'}, {'COM5'}));
+                s=serial("COM5","BaudRate", 9600, "Terminator", "CR/LF");
+                fopen(s);
+                
+                fidT=fopen(strcat(addr,'temperatura.txt'), "W"); %Abre archivo temperatura
+                fidP=fopen(strcat(addr,'pressure.txt'),"W");     %Abre archivo pressure
+
+                while nFoto <= num_photos       %mientras el número de fotos que hemos hecho
+                                                %sea menor que las fotos que queremos hacer
+                  %identificador: F:Foto, T:Temperatura, P:Pressure
+                  if(actiu==1)
+                      %app.AltitudeTextArea.Value='1';
+                      c=fscanf(s,'%s', 1);      %leer datos del puerto serie
+                      %c='P'; 
+                      switch(c)
+                            case 'F'
+                                app.PhotoFilesTextArea.Value='F';
+                                %bucle de lectura de caracteres hasta caracter de final 
+                                % leyendo la foto para guardarla en fichero. 
+                                % Control de nombre de fichero estilo foto2.jpeg
+                                
+                                nomF=strcat("foto", num2str(nFoto), ".jpeg");
+                                fidF=fopen(strcat(addr, nomF), "W");
+                                final=0;
+                                
+                                while(final==0)
+                                   a = fscanf(s, '%d');
+                                   if(a=='H')                      %marca de final de foto
+                                     final=1;
+                                     fclose(fidF);
+                                   else 
+                                     fprintf(fidF, '%d', a);       %escribir en el fichero de la imagen
+                                   end
+                                end
+                                %mostrar foto
+                                imshow(imread(strcat(addr,'foto1.jpg')),'Parent',app.UIAxes3);
+                                
+                                app.PhotoFilesTextArea.Value=nomF; %mostrar nombre del fichero
+                                nFoto=nFoto+1;
+                                
+                                break;
+                            case 'T'
+                                app.PhotoFilesTextArea.Value=c;
+                                %Espacio destinado para leer la temperatura, almacenarla, 
+                                %mostrarla en cuadro de texto y en el grafico
+                                
+                                %a = fscanf(s, '%d',1);
+                                a=80;   %con esto si que funciona
+                %  app.TemperatureTextArea.Value=num2str(a);
+                                mV=(a/204)*10^3;
+                                T = mV/10;
+                                         
+                                fprintf(fidT, '%3d\n', T);                %guardar valor en el fichero
+                                app.TemperatureTextArea.Value=num2str(T); %mostrar el valor en TextArea
+                            
+                                y(nTemperatura+1) = T;
+                                x(nTemperatura+1) = nTemperatura;
+                                scatter(app.UIAxes2, x, y);                %mostrar valor en el gráfico
+                            
+                                nTemperatura = nTemperatura+1;
+                         
+                                break;
+                            case 'P'
+                                app.PhotoFilesTextArea.Value=c;
+                                %Espacio destinado a la lectura de presión, almacenarla, 
+                                %mostrarla en el cuadro de texto y en el grafico
+                                
+                                %a = fscanf(s,'%d'); %aqui si que entra
+                                a=2000;
+                              app.TemperatureTextArea.Value=num2str(a);      
+                                V1 = a/204;
+                                V = V1*0.318-0.943; 
+                                P1 = (V*10)+0.186;
+                                kPa = (21.79*V) + 10.55;
+                                    
+                                app.PressureGauge.Value=kPa;            %mostrar valor de presión
+                                app.AltitudeTextArea.Value=num2str(P1); %mostrar altitud en TextArea
+                                fprintf(fidP, '%3d\n', P1);             %guardar valor en el fichero
+                                
+                                y(nPresion+1)=P1;
+                                x(nPresion+1)=nPresion;
+                                scatter(app.UIAxes, x, y);              %mostrar altitud en el gráfico
+                                    
+                                nPresion=nPresion+1;
+                                    
+                                break;
+                        end
+                  end
+                  %nFoto=nFoto+1;
+                end
+            end
+        end
+
+        % Button pushed function: StopButton
+        function StopButtonPushed(app, event)
+            global fidT;
+            global fidP;
+            global s;
+            global actiu;
+            if(actiu>=1)
+                app.StartButton.Visible=true; %mostramos el botón Start
+                app.StopButton.Visible=false;
+                %cerramos los ficheros y el puerto serie
+                fclose(fidT);
+                fclose(fidP);
+                fclose(s);
+                delete(s);
+                clear all;
+                actiu=0;
+            end
+            
+        end
+
+        % Value changed function: NumberofphotosTextArea
+        function NumberofphotosTextAreaValueChanged(app, event)
+            global num_photos;
+            num_photos = app.NumberofphotosTextArea.Value; %número total de fotos
+            num_photos=char2num(num_photos);
+            %no se sabe si funciona
+        end
+
+        % Value changed function: Switch
+        function SwitchValueChanged(app, event)
+            global actiu;
+            value = app.Switch.Value;
+            if strcmp(value, 'Pause')==1   %si el switch pasa a Pause no se hará nada
+               actiu=0;
+            else
+               actiu=1;
+            end
+        end
+
+        % Button pushed function: Button
+        function ButtonPushed(app, event)
+            global addr;
+            fid=fopen(strcat(addr,'x.txt'), "W");
+            delete(instrfind ({'Port'}, {'COM5'}));
+            s=serial("COM5","BaudRate", 9600, "Terminator", "CR/LF");
+            fopen(s);
+            r=0;    
+            
+            while r<100
+                a=fscanf(s, '%s');
+                fprintf(fid, '%s', a);
+                fprintf(fid, '%s\n', "---");
+                r=r+1;
+            end
+            fclose(fid);
+                fclose(s);
+                delete(s);
+                clear all;
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Colormap = [0.2431 0.149 0.6588;0.2431 0.1529 0.6745;0.2471 0.1569 0.6863;0.2471 0.1608 0.698;0.251 0.1647 0.7059;0.251 0.1686 0.7176;0.2549 0.1725 0.7294;0.2549 0.1765 0.7412;0.2588 0.1804 0.749;0.2588 0.1843 0.7608;0.2627 0.1882 0.7725;0.2627 0.1922 0.7843;0.2627 0.1961 0.7922;0.2667 0.2 0.8039;0.2667 0.2039 0.8157;0.2706 0.2078 0.8235;0.2706 0.2157 0.8353;0.2706 0.2196 0.8431;0.2745 0.2235 0.851;0.2745 0.2275 0.8627;0.2745 0.2314 0.8706;0.2745 0.2392 0.8784;0.2784 0.2431 0.8824;0.2784 0.2471 0.8902;0.2784 0.2549 0.898;0.2784 0.2588 0.902;0.2784 0.2667 0.9098;0.2784 0.2706 0.9137;0.2784 0.2745 0.9216;0.2824 0.2824 0.9255;0.2824 0.2863 0.9294;0.2824 0.2941 0.9333;0.2824 0.298 0.9412;0.2824 0.3059 0.9451;0.2824 0.3098 0.949;0.2824 0.3137 0.9529;0.2824 0.3216 0.9569;0.2824 0.3255 0.9608;0.2824 0.3294 0.9647;0.2784 0.3373 0.9686;0.2784 0.3412 0.9686;0.2784 0.349 0.9725;0.2784 0.3529 0.9765;0.2784 0.3569 0.9804;0.2784 0.3647 0.9804;0.2745 0.3686 0.9843;0.2745 0.3765 0.9843;0.2745 0.3804 0.9882;0.2706 0.3843 0.9882;0.2706 0.3922 0.9922;0.2667 0.3961 0.9922;0.2627 0.4039 0.9922;0.2627 0.4078 0.9961;0.2588 0.4157 0.9961;0.2549 0.4196 0.9961;0.251 0.4275 0.9961;0.2471 0.4314 1;0.2431 0.4392 1;0.2353 0.4431 1;0.2314 0.451 1;0.2235 0.4549 1;0.2196 0.4627 0.9961;0.2118 0.4667 0.9961;0.2078 0.4745 0.9922;0.2 0.4784 0.9922;0.1961 0.4863 0.9882;0.1922 0.4902 0.9882;0.1882 0.498 0.9843;0.1843 0.502 0.9804;0.1843 0.5098 0.9804;0.1804 0.5137 0.9765;0.1804 0.5176 0.9725;0.1804 0.5255 0.9725;0.1804 0.5294 0.9686;0.1765 0.5333 0.9647;0.1765 0.5412 0.9608;0.1765 0.5451 0.9569;0.1765 0.549 0.9529;0.1765 0.5569 0.949;0.1725 0.5608 0.9451;0.1725 0.5647 0.9412;0.1686 0.5686 0.9373;0.1647 0.5765 0.9333;0.1608 0.5804 0.9294;0.1569 0.5843 0.9255;0.1529 0.5922 0.9216;0.1529 0.5961 0.9176;0.149 0.6 0.9137;0.149 0.6039 0.9098;0.1451 0.6078 0.9098;0.1451 0.6118 0.9059;0.1412 0.6196 0.902;0.1412 0.6235 0.898;0.1373 0.6275 0.898;0.1373 0.6314 0.8941;0.1333 0.6353 0.8941;0.1294 0.6392 0.8902;0.1255 0.6471 0.8902;0.1216 0.651 0.8863;0.1176 0.6549 0.8824;0.1137 0.6588 0.8824;0.1137 0.6627 0.8784;0.1098 0.6667 0.8745;0.1059 0.6706 0.8706;0.102 0.6745 0.8667;0.098 0.6784 0.8627;0.0902 0.6824 0.8549;0.0863 0.6863 0.851;0.0784 0.6902 0.8471;0.0706 0.6941 0.8392;0.0627 0.698 0.8353;0.0549 0.702 0.8314;0.0431 0.702 0.8235;0.0314 0.7059 0.8196;0.0235 0.7098 0.8118;0.0157 0.7137 0.8078;0.0078 0.7176 0.8;0.0039 0.7176 0.7922;0 0.7216 0.7882;0 0.7255 0.7804;0 0.7294 0.7765;0.0039 0.7294 0.7686;0.0078 0.7333 0.7608;0.0157 0.7333 0.7569;0.0235 0.7373 0.749;0.0353 0.7412 0.7412;0.051 0.7412 0.7373;0.0627 0.7451 0.7294;0.0784 0.7451 0.7216;0.0902 0.749 0.7137;0.102 0.7529 0.7098;0.1137 0.7529 0.702;0.1255 0.7569 0.6941;0.1373 0.7569 0.6863;0.1451 0.7608 0.6824;0.1529 0.7608 0.6745;0.1608 0.7647 0.6667;0.1686 0.7647 0.6588;0.1725 0.7686 0.651;0.1804 0.7686 0.6471;0.1843 0.7725 0.6392;0.1922 0.7725 0.6314;0.1961 0.7765 0.6235;0.2 0.7804 0.6157;0.2078 0.7804 0.6078;0.2118 0.7843 0.6;0.2196 0.7843 0.5882;0.2235 0.7882 0.5804;0.2314 0.7882 0.5725;0.2392 0.7922 0.5647;0.251 0.7922 0.5529;0.2588 0.7922 0.5451;0.2706 0.7961 0.5373;0.2824 0.7961 0.5255;0.2941 0.7961 0.5176;0.3059 0.8 0.5059;0.3176 0.8 0.498;0.3294 0.8 0.4863;0.3412 0.8 0.4784;0.3529 0.8 0.4667;0.3686 0.8039 0.4549;0.3804 0.8039 0.4471;0.3922 0.8039 0.4353;0.4039 0.8039 0.4235;0.4196 0.8039 0.4118;0.4314 0.8039 0.4;0.4471 0.8039 0.3922;0.4627 0.8 0.3804;0.4745 0.8 0.3686;0.4902 0.8 0.3569;0.5059 0.8 0.349;0.5176 0.8 0.3373;0.5333 0.7961 0.3255;0.5451 0.7961 0.3176;0.5608 0.7961 0.3059;0.5765 0.7922 0.2941;0.5882 0.7922 0.2824;0.6039 0.7882 0.2745;0.6157 0.7882 0.2627;0.6314 0.7843 0.251;0.6431 0.7843 0.2431;0.6549 0.7804 0.2314;0.6706 0.7804 0.2235;0.6824 0.7765 0.2157;0.698 0.7765 0.2078;0.7098 0.7725 0.2;0.7216 0.7686 0.1922;0.7333 0.7686 0.1843;0.7451 0.7647 0.1765;0.7608 0.7647 0.1725;0.7725 0.7608 0.1647;0.7843 0.7569 0.1608;0.7961 0.7569 0.1569;0.8078 0.7529 0.1529;0.8157 0.749 0.1529;0.8275 0.749 0.1529;0.8392 0.7451 0.1529;0.851 0.7451 0.1569;0.8588 0.7412 0.1569;0.8706 0.7373 0.1608;0.8824 0.7373 0.1647;0.8902 0.7373 0.1686;0.902 0.7333 0.1765;0.9098 0.7333 0.1804;0.9176 0.7294 0.1882;0.9255 0.7294 0.1961;0.9373 0.7294 0.2078;0.9451 0.7294 0.2157;0.9529 0.7294 0.2235;0.9608 0.7294 0.2314;0.9686 0.7294 0.2392;0.9765 0.7294 0.2431;0.9843 0.7333 0.2431;0.9882 0.7373 0.2431;0.9961 0.7412 0.2392;0.9961 0.7451 0.2353;0.9961 0.7529 0.2314;0.9961 0.7569 0.2275;0.9961 0.7608 0.2235;0.9961 0.7686 0.2196;0.9961 0.7725 0.2157;0.9961 0.7804 0.2078;0.9961 0.7843 0.2039;0.9961 0.7922 0.2;0.9922 0.7961 0.1961;0.9922 0.8039 0.1922;0.9922 0.8078 0.1922;0.9882 0.8157 0.1882;0.9843 0.8235 0.1843;0.9843 0.8275 0.1804;0.9804 0.8353 0.1804;0.9765 0.8392 0.1765;0.9765 0.8471 0.1725;0.9725 0.851 0.1686;0.9686 0.8588 0.1647;0.9686 0.8667 0.1647;0.9647 0.8706 0.1608;0.9647 0.8784 0.1569;0.9608 0.8824 0.1569;0.9608 0.8902 0.1529;0.9608 0.898 0.149;0.9608 0.902 0.149;0.9608 0.9098 0.1451;0.9608 0.9137 0.1412;0.9608 0.9216 0.1373;0.9608 0.9255 0.1333;0.9608 0.9333 0.1294;0.9647 0.9373 0.1255;0.9647 0.9451 0.1216;0.9647 0.949 0.1176;0.9686 0.9569 0.1098;0.9686 0.9608 0.1059;0.9725 0.9686 0.102;0.9725 0.9725 0.0941;0.9765 0.9765 0.0863;0.9765 0.9843 0.0824];
+            app.UIFigure.Position = [100 100 709 529];
+            app.UIFigure.Name = 'UI Figure';
+
+            % Create StartButton
+            app.StartButton = uibutton(app.UIFigure, 'push');
+            app.StartButton.ButtonPushedFcn = createCallbackFcn(app, @StartButtonPushed, true);
+            app.StartButton.BackgroundColor = [0.502 0.502 0.502];
+            app.StartButton.FontWeight = 'bold';
+            app.StartButton.FontColor = [1 1 1];
+            app.StartButton.Position = [575 474 128 48];
+            app.StartButton.Text = 'Start';
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.UIFigure);
+            title(app.UIAxes, 'Altitude')
+            xlabel(app.UIAxes, 'Photos number')
+            ylabel(app.UIAxes, 'Depth (m)')
+            app.UIAxes.FontSize = 13;
+            app.UIAxes.YTick = [0 0.5 1];
+            app.UIAxes.XGrid = 'on';
+            app.UIAxes.YGrid = 'on';
+            app.UIAxes.Position = [9 71 332 207];
+
+            % Create UIAxes2
+            app.UIAxes2 = uiaxes(app.UIFigure);
+            title(app.UIAxes2, 'Temperature')
+            xlabel(app.UIAxes2, 'Photo number')
+            ylabel(app.UIAxes2, 'Temperature (ºC)')
+            app.UIAxes2.PlotBoxAspectRatio = [1.9 1 1];
+            app.UIAxes2.FontSize = 13;
+            app.UIAxes2.XTickLabel = {'0'; '1'; '2'; '3'; '4'; '5'; '6'; '7'; '8'; '9'; '10'; '11'};
+            app.UIAxes2.XGrid = 'on';
+            app.UIAxes2.YGrid = 'on';
+            app.UIAxes2.Position = [377 71 324 207];
+
+            % Create NumberofphotosTextAreaLabel
+            app.NumberofphotosTextAreaLabel = uilabel(app.UIFigure);
+            app.NumberofphotosTextAreaLabel.BackgroundColor = [0.8 0.8 0.8];
+            app.NumberofphotosTextAreaLabel.HorizontalAlignment = 'right';
+            app.NumberofphotosTextAreaLabel.FontWeight = 'bold';
+            app.NumberofphotosTextAreaLabel.Position = [9 500 109 22];
+            app.NumberofphotosTextAreaLabel.Text = 'Number of photos';
+
+            % Create NumberofphotosTextArea
+            app.NumberofphotosTextArea = uitextarea(app.UIFigure);
+            app.NumberofphotosTextArea.ValueChangedFcn = createCallbackFcn(app, @NumberofphotosTextAreaValueChanged, true);
+            app.NumberofphotosTextArea.BackgroundColor = [0.8 0.8 0.8];
+            app.NumberofphotosTextArea.Position = [133 485 52 29];
+            app.NumberofphotosTextArea.Value = {'20'};
+
+            % Create PhotoFilesTextAreaLabel
+            app.PhotoFilesTextAreaLabel = uilabel(app.UIFigure);
+            app.PhotoFilesTextAreaLabel.HorizontalAlignment = 'right';
+            app.PhotoFilesTextAreaLabel.Position = [479 351 66 22];
+            app.PhotoFilesTextAreaLabel.Text = 'Photo Files';
+
+            % Create PhotoFilesTextArea
+            app.PhotoFilesTextArea = uitextarea(app.UIFigure);
+            app.PhotoFilesTextArea.Position = [560 290 145 85];
+
+            % Create Switch
+            app.Switch = uiswitch(app.UIFigure, 'slider');
+            app.Switch.Items = {'Continue', 'Pause'};
+            app.Switch.ValueChangedFcn = createCallbackFcn(app, @SwitchValueChanged, true);
+            app.Switch.Position = [627 448 35 16];
+            app.Switch.Value = 'Continue';
+
+            % Create StopButton
+            app.StopButton = uibutton(app.UIFigure, 'push');
+            app.StopButton.ButtonPushedFcn = createCallbackFcn(app, @StopButtonPushed, true);
+            app.StopButton.BackgroundColor = [0.6353 0.0784 0.1843];
+            app.StopButton.FontWeight = 'bold';
+            app.StopButton.FontColor = [1 1 1];
+            app.StopButton.Visible = 'off';
+            app.StopButton.Position = [589 414 100 22];
+            app.StopButton.Text = 'Stop';
+
+            % Create PressureGaugeLabel
+            app.PressureGaugeLabel = uilabel(app.UIFigure);
+            app.PressureGaugeLabel.HorizontalAlignment = 'center';
+            app.PressureGaugeLabel.FontSize = 13;
+            app.PressureGaugeLabel.FontWeight = 'bold';
+            app.PressureGaugeLabel.Position = [9 442 61 22];
+            app.PressureGaugeLabel.Text = 'Pressure';
+
+            % Create PressureGauge
+            app.PressureGauge = uigauge(app.UIFigure, 'circular');
+            app.PressureGauge.Position = [9 286 150 150];
+
+            % Create AltitudeTextAreaLabel
+            app.AltitudeTextAreaLabel = uilabel(app.UIFigure);
+            app.AltitudeTextAreaLabel.HorizontalAlignment = 'right';
+            app.AltitudeTextAreaLabel.Position = [46 37 46 22];
+            app.AltitudeTextAreaLabel.Text = 'Altitude';
+
+            % Create AltitudeTextArea
+            app.AltitudeTextArea = uitextarea(app.UIFigure);
+            app.AltitudeTextArea.Position = [107 12 229 49];
+
+            % Create TemperatureTextAreaLabel
+            app.TemperatureTextAreaLabel = uilabel(app.UIFigure);
+            app.TemperatureTextAreaLabel.HorizontalAlignment = 'right';
+            app.TemperatureTextAreaLabel.Position = [391 36 73 22];
+            app.TemperatureTextAreaLabel.Text = 'Temperature';
+
+            % Create TemperatureTextArea
+            app.TemperatureTextArea = uitextarea(app.UIFigure);
+            app.TemperatureTextArea.Position = [479 11 209 49];
+
+            % Create UIAxes3
+            app.UIAxes3 = uiaxes(app.UIFigure);
+            title(app.UIAxes3, 'Image')
+            xlabel(app.UIAxes3, '')
+            ylabel(app.UIAxes3, '')
+            app.UIAxes3.PlotBoxAspectRatio = [1.815 1 1];
+            app.UIAxes3.XColor = 'none';
+            app.UIAxes3.XTick = [];
+            app.UIAxes3.YColor = 'none';
+            app.UIAxes3.YTick = [];
+            app.UIAxes3.BackgroundColor = [0.902 0.902 0.902];
+            app.UIAxes3.Position = [184 333 300 185];
+
+            % Create Button
+            app.Button = uibutton(app.UIFigure, 'push');
+            app.Button.ButtonPushedFcn = createCallbackFcn(app, @ButtonPushed, true);
+            app.Button.Position = [491 383 100 22];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = ROUV_APP
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
